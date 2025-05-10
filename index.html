@@ -1,0 +1,195 @@
+
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>ぷよぷよミニ</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    body {
+      background: #222;
+      margin: 0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+    }
+    canvas {
+      background: #000;
+      border: 2px solid #fff;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="game" width="180" height="360"></canvas>
+  <script>
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+    const COLS = 6;
+    const ROWS = 12;
+    const BLOCK_SIZE = 30;
+
+    const colors = [null, '#ff4d4d', '#4d88ff'];
+
+    let field = Array.from({length: ROWS}, () => Array(COLS).fill(0));
+
+    let pair = {
+      blocks: [1, 2],
+      x: 2,
+      y: 0
+    };
+
+    function drawBlock(x, y, color) {
+  const px = x * BLOCK_SIZE;
+  const py = y * BLOCK_SIZE;
+  const radius = 6;
+
+  const grad = ctx.createLinearGradient(px, py, px, py + BLOCK_SIZE);
+  grad.addColorStop(0, "#ffffff");
+  grad.addColorStop(0.2, color);
+  grad.addColorStop(1, "#000000");
+
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  roundedRect(ctx, px + 1, py + 1, BLOCK_SIZE - 2, BLOCK_SIZE - 2, radius);
+  ctx.fill();
+}
+
+function roundedRect(ctx, x, y, width, height, radius) {
+  ctx.beginPath();
+  ctx.moveTo(x + radius, y);
+  ctx.lineTo(x + width - radius, y);
+  ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+  ctx.lineTo(x + width, y + height - radius);
+  ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+  ctx.lineTo(x + radius, y + height);
+  ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+  ctx.lineTo(x, y + radius);
+  ctx.quadraticCurveTo(x, y, x + radius, y);
+  ctx.closePath();
+}
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      for (let y = 0; y < ROWS; y++) {
+        for (let x = 0; x < COLS; x++) {
+          if (field[y][x]) {
+            drawBlock(x, y, colors[field[y][x]]);
+          }
+        }
+      }
+      // 現在のぷよペア
+      for (let i = 0; i < pair.blocks.length; i++) {
+        let px = pair.x;
+        let py = pair.y - i;
+        if (py >= 0) {
+          drawBlock(px, py, colors[pair.blocks[i]]);
+        }
+      }
+    }
+
+    function update() {
+      pair.y++;
+      if (isCollision()) {
+        pair.y--;
+        fixPair();
+        clearLines();
+        spawnNewPair();
+      }
+      draw();
+    }
+
+    function isCollision() {
+      for (let i = 0; i < pair.blocks.length; i++) {
+        let px = pair.x;
+        let py = pair.y - i;
+        if (py >= ROWS || (py >= 0 && field[py][px])) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    function fixPair() {
+      for (let i = 0; i < pair.blocks.length; i++) {
+        let px = pair.x;
+        let py = pair.y - i;
+        if (py >= 0) field[py][px] = pair.blocks[i];
+      }
+    }
+
+    function clearLines() {
+      // 簡易4つ揃い消し（縦横）
+      const visited = Array.from({length: ROWS}, () => Array(COLS).fill(false));
+      const toClear = [];
+
+      function dfs(x, y, color, group) {
+        if (x < 0 || x >= COLS || y < 0 || y >= ROWS) return;
+        if (visited[y][x] || field[y][x] !== color) return;
+        visited[y][x] = true;
+        group.push([x, y]);
+        [[1,0],[-1,0],[0,1],[0,-1]].forEach(([dx,dy]) => dfs(x+dx, y+dy, color, group));
+      }
+
+      for (let y = 0; y < ROWS; y++) {
+        for (let x = 0; x < COLS; x++) {
+          if (field[y][x] && !visited[y][x]) {
+            const group = [];
+            dfs(x, y, field[y][x], group);
+            if (group.length >= 4) {
+              toClear.push(...group);
+            }
+          }
+        }
+      }
+
+      toClear.forEach(([x, y]) => field[y][x] = 0);
+      applyGravity();
+    }
+
+    function applyGravity() {
+      for (let x = 0; x < COLS; x++) {
+        let stack = [];
+        for (let y = ROWS - 1; y >= 0; y--) {
+          if (field[y][x]) {
+            stack.push(field[y][x]);
+            field[y][x] = 0;
+          }
+        }
+        for (let y = ROWS - 1, i = 0; i < stack.length; y--, i++) {
+          field[y][x] = stack[i];
+        }
+      }
+    }
+
+    function spawnNewPair() {
+      pair = {
+        blocks: [Math.random() < 0.5 ? 1 : 2, Math.random() < 0.5 ? 1 : 2],
+        x: 2,
+        y: 0
+      };
+      if (isCollision()) {
+        alert("ゲームオーバー！");
+        field = Array.from({length: ROWS}, () => Array(COLS).fill(0));
+      }
+    }
+
+    document.addEventListener('keydown', e => {
+      if (e.key === 'ArrowLeft') {
+        pair.x = Math.max(0, pair.x - 1);
+        if (isCollision()) pair.x++;
+      }
+      if (e.key === 'ArrowRight') {
+        pair.x = Math.min(COLS - 1, pair.x + 1);
+        if (isCollision()) pair.x--;
+      }
+      if (e.key === 'ArrowDown') {
+        update();
+      }
+    });
+
+    spawnNewPair();
+    setInterval(update, 500);
+  </script>
+</body>
+</html>
